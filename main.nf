@@ -336,21 +336,35 @@ workflow FASTQ_QC {
     fastq_qc_workflow(reads_ch)
 
     // Log completion message with results
-    fastq_qc_workflow.out.updated_samplesheet.map { it.toString() }.subscribe { updated_sheet ->
-        def input_dir = file(samplesheet).parent
-        def updated_filename = file(updated_sheet).name
-        def published_samplesheet = "${input_dir}/${updated_filename}"
-        log.info """
-    ===============================================================================================
-    🧬 FASTQ Quality Control Workflow Completed 🧬
-    ===============================================================================================
-    • Outputs:
-        • FASTQ QC reports: ${params.outdir}/${params.project_name}/${params.workflow}/fastqc/
-        • MultiQC reports: ${params.outdir}/${params.project_name}/${params.workflow}/multiqc/multiqc_report.html
-        """ + (params.trim_reads ? "• Trimmed reads available in: ${params.outdir}/${params.project_name}/${params.workflow}/trimmed/" : "• Trimming was disabled") + """
-        • Updated samplesheet: ${published_samplesheet}
-    ===============================================================================================
-    """
+    if (params.trim_reads) {
+        fastq_qc_workflow.out.updated_samplesheet.map { it.toString() }.subscribe { updated_sheet ->
+            log.info """
+        ===============================================================================================
+        🧬 FASTQ Quality Control Workflow Completed 🧬
+        ===============================================================================================
+        • Outputs:
+            • FASTQ QC reports: ${params.outdir}/${params.project_name}/${params.workflow}/fastqc/
+            • MultiQC reports: ${params.outdir}/${params.project_name}/${params.workflow}/multiqc/multiqc_report.html
+            • Trimmed reads available in: ${params.outdir}/${params.project_name}/${params.workflow}/trimmed/
+            • Updated samplesheet: 
+              - ${updated_sheet}
+              - ${params.outdir}/${params.project_name}/${params.workflow}/samplesheets/${file(updated_sheet).name}
+        ===============================================================================================
+        """
+        }
+    } else {
+        fastq_qc_workflow.out.multiqc_report.map { report ->
+            log.info """
+        ===============================================================================================
+        🧬 FASTQ Quality Control Workflow Completed 🧬
+        ===============================================================================================
+        • Outputs:
+            • FASTQ QC reports: ${params.outdir}/${params.project_name}/${params.workflow}/fastqc/
+            • MultiQC reports: ${params.outdir}/${params.project_name}/${params.workflow}/multiqc/multiqc_report.html
+            • Trimming was disabled
+        ===============================================================================================
+        """
+        }
     }
 
     emit:
@@ -422,9 +436,6 @@ workflow BAM_QC {
 }
 
 workflow VCF_QC {
-    take:
-    samplesheet
-
     main:
     log.info """
     ===============================================================================================
@@ -435,40 +446,143 @@ workflow VCF_QC {
     • Calculating variant statistics and quality metrics
     • Generating per-sample variant reports
     • Creating MultiQC report to summarize all variant metrics
+    • Inputs:
+        • VCF Input: ${params.vcf_input ?: 'Not provided'}
+        • VCF Directory: ${params.vcf_dir ?: 'Not provided'}
+        • Output Directory: ${params.outdir}
     ===============================================================================================
     """
     
-    // Create input channel from samplesheet
-    Channel.fromPath(file(samplesheet))
-        .splitCsv(header: true, sep: '\t')
-        .map { row -> 
-            def vcf = file(row['VCF'])
-            def index = file("${vcf}.tbi")
-
-            // Check if the VCF files exist
-            if (!vcf.exists() || !index.exists()) {
-                throw new RuntimeException("VCF/TBI files do not exist: ${vcf}, ${index}")
-            }
-
-            return [vcf, index]
+    // Create input channel based on provided parameters
+    def vcf_ch = Channel.empty()
+    
+    if (params.vcf_input) {
+        // Single VCF file provided
+        def vcf_file = file(params.vcf_input)
+        
+        if (!vcf_file.exists()) {
+            error """
+            ============================================================
+            ERROR: VCF file not found: ${params.vcf_input}
+            ============================================================
+            Please check that the file exists and the path is correct.
+            """
         }
-        .set { vcf_ch }
+        
+        def index = file("${params.vcf_input}.tbi")
+        if (!index.exists()) {
+            log.warn """
+            ============================================================
+            WARNING: VCF index (.tbi) not found for ${params.vcf_input}
+            ============================================================
+            Will attempt to create index during processing.
+            """
+        }
+        
+        vcf_ch = Channel.of([vcf_file, index])
+    } 
+    else if (params.vcf_dir) {
+        // Directory of VCFs provided
+        def vcf_dir = file(params.vcf_dir)
+        
+        if (!vcf_dir.exists() || !vcf_dir.isDirectory()) {
+            error """
+            ============================================================
+            ERROR: VCF directory not found or is not a directory: ${params.vcf_dir}
+            ============================================================
+            Please check that the directory exists and the path is correct.
+            """
+        }
+        
+        // Find all VCF files in the directory
+        vcf_ch = Channel.fromPath("${vcf_dir}/*.vcf.gz")
+            .map { vcf_file -> 
+                def vcf_index = file("${vcf_file}.tbi")
+                if (!vcf_index.exists()) {
+                    log.warn """
+                    ============================================================
+                    WARNING: VCF index (.tbi) not found for ${vcf_file}
+                    ============================================================
+                    Will attempt to create index during processing.
+                    """
+                }
+                return [vcf_file, vcf_index]
+            }
+    }
+    else if (params.sample_sheet) {
+        // Legacy mode: create input channel from samplesheet
+        log.warn "Using sample sheet mode for backward compatibility. Consider using --vcf_input or --vcf_dir instead."
+        
+        Channel.fromPath(file(params.sample_sheet))
+            .splitCsv(header: true, sep: '\t')
+            .map { row -> 
+                def sample_id = row['SampleID']
+                def vcf_path = row['VCF']
+                def vcf = file(vcf_path)
+                
+                if (!vcf.exists()) {
+                    log.error """
+                    ============================================================
+                    ERROR: VCF file not found for sample ${sample_id}
+                    ============================================================
+                    Path: ${vcf_path}
+                    Please check that the file exists and the path is correct.
+                    """
+                    return null
+                }
+                
+                def index = file("${vcf}.tbi")
+                if (!index.exists()) {
+                    log.warn """
+                    ============================================================
+                    WARNING: VCF index (.tbi) not found for sample ${sample_id}
+                    ============================================================
+                    Path: ${index}
+                    Will attempt to create index during processing.
+                    """
+                }
+
+                return [vcf, index]
+            }
+            .filter { it != null }
+            .set { vcf_ch }
+    }
+    else {
+        error """
+        ===============================================================================================
+        ERROR: No VCF input provided!
+        ===============================================================================================
+        Please provide one of the following:
+          --vcf_input    : Path to a single VCF file
+          --vcf_dir      : Path to a directory containing VCF files
+          --sample_sheet : Legacy mode - path to a sample sheet with VCF file paths
+        ===============================================================================================
+        """
+    }
+    
+    // Count and log the number of VCF files
+    vcf_ch.count().subscribe { count ->
+        log.info "Processing ${count} VCF files for QC"
+    }
 
     // Run VCF QC workflow
     vcf_qc_workflow(vcf_ch)
 
-    // Log completion message
-    log.info """
+    // Log completion message when the workflow completes
+    vcf_qc_workflow.out.stats.collectFile(name: 'vcf_qc_complete.txt').subscribe { 
+        log.info """
     ===============================================================================================
     🧬 VCF Quality Control Workflow Completed 🧬
     ===============================================================================================
-    • VCF QC results are available in: ${params.outdir}/${params.project_name}/${params.workflow}/vcf/
-    • MultiQC report: ${params.outdir}/${params.project_name}/${params.workflow}/vcf/multiqc_report.html
+    • VCF QC results are available in: ${params.outdir}/${params.project_name}/${params.workflow}/
+    • MultiQC report: ${params.outdir}/${params.project_name}/${params.workflow}/multiqc_report.html
     ===============================================================================================
     """
+    }
 
     emit:
     vcf_results = vcf_qc_workflow.out.stats
+    multiqc_report = vcf_qc_workflow.out.multiqc_report
 }
 
 workflow ALIGN {
@@ -1075,7 +1189,7 @@ workflow GENOME_CALLING {
     🧬 Genome Calling Workflow Completed 🧬
     ===============================================================================================
     • Final VCF is available in: ${params.outdir}/${params.project_name}/${params.workflow}/vcf/hard_filter/
-    - Combined before VQSR and Hard filtering: ${params.outdir}/${params.project_name}/${params.workflow}/vcfs/${params.project_name}.vcf.gz
+    • Combined before VQSR and Hard filtering: ${params.outdir}/${params.project_name}/${params.workflow}/vcfs/${params.project_name}.vcf.gz
     • Final VCF SNPs: ${params.outdir}/${params.project_name}/${params.workflow}/vcfs/${params.project_name}.recal-SNP.vcf.gz
     • Final VCF INDELs: ${params.outdir}/${params.project_name}/${params.workflow}/vcfs/${params.project_name}.recal-INDEL.vcf.gz
     ===============================================================================================
@@ -1426,7 +1540,7 @@ workflow {
     }
 
     // List of workflows that require a sample sheet
-    def samplesheet_required = ['validate_fastq', 'fastq_qc', 'bam_qc', 'vcf_qc', 'align', 'generate-gvcfs', 
+    def samplesheet_required = ['validate_fastq', 'fastq_qc', 'bam_qc', 'align', 'generate-gvcfs', 
                                'combine-gvcfs', 'genomics-db-import', 'validate-gvcf']
     
     // Check if sample sheet is required
@@ -1468,8 +1582,8 @@ workflow {
         WORKFLOW_VALIDATE_GVCF()
     }
     else if (params.workflow == 'vcf_qc') {
-        checkRequiredFile(params.sample_sheet, "Sample sheet", "VCF QC workflow")
-        VCF_QC(params.sample_sheet)
+        // No need to check for sample sheet anymore
+        VCF_QC()
     }
     else if (params.workflow == 'align') {
         checkRequiredFile(params.sample_sheet, "Sample sheet", "Alignment workflow")

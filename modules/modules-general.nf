@@ -114,7 +114,9 @@ def get_updated_samplesheet_name(original_name, workflow_step) {
 process update_samplesheet {
     tag "update_samplesheet_${workflow_type}"
     label 'process_low'
-    // Use the same directory as the original sample sheet
+    // Publish to a dedicated directory in the output folder
+    publishDir "${params.outdir}/${params.project_name}/${params.workflow}/samplesheets", mode: 'copy', overwrite: true
+    // Also publish to the original sample sheet directory for backward compatibility
     publishDir { "${file(params.sample_sheet).parent}" }, mode: 'copy', overwrite: true
     cache 'deep'
     
@@ -128,7 +130,20 @@ process update_samplesheet {
     path "${samplesheet.baseName}_${suffix}.csv", emit: updated_samplesheet
     
     script:
-    template 'update_samplesheet.py'
+    """
+    # Log input files for debugging
+    echo "Content of paths_file (${paths_file}):"
+    cat ${paths_file} | head -n 10
+    echo ""
+    
+    # Run the update script with explicit python call
+    python3 ${workflow.projectDir}/templates/update_samplesheet.py "${samplesheet}" "${workflow_type}" "${suffix}" "${paths_file}" "${samplesheet.baseName}_${suffix}.csv"
+    
+    # Check the created file
+    echo "Content of generated file (${samplesheet.baseName}_${suffix}.csv):"
+    cat "${samplesheet.baseName}_${suffix}.csv" | head -n 10
+    echo ""
+    """
 }
 
 

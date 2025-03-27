@@ -727,9 +727,7 @@ process run_vcf_multiqc {
     tag 'vcf_multiqc'
     label 'big_mem'
     label 'multiqc'
-    publishDir "${params.outdir}/${params.project_name}/${params.workflow}/multiqc", mode: 'copy',
-        pattern: "*_multiqc.{html,zip}"
-    cache 'deep'
+    publishDir "${params.outdir}/${params.project_name}/${params.workflow}", mode: 'copy'
 
     input:
     path('*')
@@ -886,49 +884,82 @@ workflow fastq_qc_workflow {
         }
         .set { input_with_validation }
     
+    // Default values - will be updated by trim/fastqc processes
+    def processed_reads = input_with_validation
+    def trim_reports_ch = Channel.empty()
+    def updated_samplesheet_ch = Channel.empty()
+    
     if (params.trim_reads) {
         log.info "Trimming is enabled. Running Trimmomatic..."
         fastq_trim(input_with_validation)
         processed_reads = fastq_trim.out.trimmed_reads
-        trim_reports = fastq_trim.out.trim_report
+        trim_reports_ch = fastq_trim.out.trim_report.collect()
 
         // Run FastQC on trimmed reads
         trimmed_fastqc(processed_reads)
 
         // Create a channel with sample IDs and both trimmed FASTQ paths for samplesheet update
-        def trimmed_paths_ch = fastq_trim.out.trimmed_reads
+        fastq_trim.out.trimmed_reads
             .map { sample_id, r1, r2, flowcell, lane -> 
                 def r1_path = "${params.outdir}/${params.project_name}/${params.workflow}/trimmed/${r1.name}"
                 def r2_path = "${params.outdir}/${params.project_name}/${params.workflow}/trimmed/${r2.name}"
-                
-                // Log information about the files
-                // log.info "Sample ${sample_id} trimmed files will be available at: ${r1_path} and ${r2_path}"
-                
-                [sample_id, r1_path, r2_path]
+                // Log paths only if debug mode is enabled
+                if (params.debug) {
+                    log.info "FASTQ paths for ${sample_id}: R1=${r1_path}, R2=${r2_path}"
+                }
+                return "${sample_id}\t${r1_path}\t${r2_path}"
             }
+            .collectFile(
+                name: 'trimmed_fastq_paths.tsv',
+                newLine: true,
+                seed: "SampleID\tFastqTrimmedR1\tFastqTrimmedR2\n"
+            )
+            .map { file -> 
+                // Only log basic information about the file
+                if (params.debug) {
+                    log.info "Generated trimmed_fastq_paths.tsv file: ${file}"
+                }
+                return file
+            }
+            .set { trimmed_paths_file }
+        
+        // Actually update the samplesheet with the trimmed paths
+        updated_samplesheet_ch = update_samplesheet(
+            file(params.sample_sheet),
+            "fastq_qc",
+            "trimmed",
+            trimmed_paths_file
+        )
+    } else {
+        // Just run FastQC on the original reads
+        raw_fastqc(input_with_validation)
     }
-
-    // Create default placeholder channels for outputs that may not be set depending on workflow
-    def reads_ch = validate_fastq.out.validated_reads // Use the original validated reads channel
-    def qc_reports_ch = Channel.empty()
-    def qc_summary_ch = Channel.empty()
-    def trim_reports_ch = Channel.empty()
-    def multiqc_report_ch = Channel.empty()
-    def multiqc_data_ch = Channel.empty()
     
-    // Create a better name for the updated samplesheet based on the original
-    def updated_samplesheet_path = file(params.sample_sheet).getName().replaceFirst(/\.csv$/, "_trimmed.csv")
-    def updated_samplesheet_ch = Channel.of(updated_samplesheet_path)
+    // Run MultiQC on all FastQC reports (and any trim reports)
+    def multiqc_input = Channel.empty()
+    
+    if (params.trim_reads) {
+        // For trimmed workflow, collect trimmed FastQC and trim reports
+        multiqc_input = trimmed_fastqc.out.zip_files
+            .mix(fastq_trim.out.for_multiqc)
+            .collect()
+    } else {
+        // For raw workflow, just collect FastQC reports
+        multiqc_input = raw_fastqc.out.zip_files.collect()
+    }
+    
+    // Run MultiQC
+    run_fastq_multiqc(multiqc_input)
 
     emit:
     validated_reads = validate_fastq.out.validated_reads
     validation_report = validate_fastq.out.validation_report
-    reads = reads_ch
-    qc_reports = qc_reports_ch
-    qc_summary = qc_summary_ch
+    reads = processed_reads
+    qc_reports = params.trim_reads ? trimmed_fastqc.out.fastqc_reports : raw_fastqc.out.fastqc_reports
+    qc_summary = params.trim_reads ? trimmed_fastqc.out.fastqc_summary : raw_fastqc.out.fastqc_summary
     trim_reports = trim_reports_ch
-    multiqc_report = multiqc_report_ch
-    multiqc_data = multiqc_data_ch
+    multiqc_report = run_fastq_multiqc.out.report
+    multiqc_data = run_fastq_multiqc.out.data
     updated_samplesheet = updated_samplesheet_ch
 }
 
