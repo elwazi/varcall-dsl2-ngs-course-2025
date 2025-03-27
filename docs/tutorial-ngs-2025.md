@@ -42,8 +42,7 @@ Let's begin your journey to successful variant calling!
   - [Learning Objectives](#learning-objectives)
   - [Pipeline Summary](#pipeline-summary)
   - [1. Environment Setup](#1-environment-setup)
-    - [1.1. Directory Configuration](#11-directory-configuration)
-    - [1.2. Prerequisites](#12-prerequisites)
+    - [1.1. Prerequisites](#11-prerequisites)
       - [Required Software](#required-software)
         - [Prerequisites:](#prerequisites)
         - [Install Nextflow:](#install-nextflow)
@@ -51,18 +50,19 @@ Let's begin your journey to successful variant calling!
       - [Container Technology](#container-technology)
       - [Computing Resources](#computing-resources)
       - [Bioinformatics Background](#bioinformatics-background)
-    - [1.3. Get the pipeline from GitHub:](#13-get-the-pipeline-from-github)
-    - [1.4. Directory Structure](#14-directory-structure)
+    - [1.2. Get the pipeline from GitHub:](#12-get-the-pipeline-from-github)
+    - [1.3. Directory Configuration](#13-directory-configuration)
   - [2. Pipeline Configuration](#2-pipeline-configuration)
     - [2.1. Configuration Files](#21-configuration-files)
-    - [2.2. Sample Sheet Format](#22-sample-sheet-format)
+    - [2.2. Sample Sheet Format (**Tab-separated**)](#22-sample-sheet-format-tab-separated)
       - [Field Details](#field-details)
       - [Example Sample Sheets](#example-sample-sheets)
     - [2.3. Execution Profiles](#23-execution-profiles)
     - [2.4. Container Configuration](#24-container-configuration)
-  - [3. Reference Data Preparation](#3-reference-data-preparation)
-    - [3.1. Download Reference Genome and Resources from Cloud Storage](#31-download-reference-genome-and-resources-from-cloud-storage)
-  - [4. Input Data Processing](#4-input-data-processing)
+  - [3. Reference Data Preparation (Step 1)](#3-reference-data-preparation-step-1)
+      - [Download Reference Genome and Resources from Cloud Storage](#download-reference-genome-and-resources-from-cloud-storage)
+      - [Reference File Descriptions](#reference-file-descriptions)
+  - [4. Input Data Processing (Step 2)](#4-input-data-processing-step-2)
     - [4.1. Validate FASTQ Files: Ensuring Data Quality and Integrity](#41-validate-fastq-files-ensuring-data-quality-and-integrity)
     - [4.2. Run FASTQ Quality Control](#42-run-fastq-quality-control)
       - [Understanding FASTQ QC](#understanding-fastq-qc)
@@ -196,66 +196,7 @@ The pipeline consists of multiple workflows that can be run independently or seq
 
 ## 1. Environment Setup
 
-### 1.1. Directory Configuration
-
-Before starting, you'll need to set up a proper directory structure. Think of this as building the foundation for your analysis - a well-organized workspace leads to a smoother workflow.
-
-```bash
-# Set your project directory
-project_dir="/users/mamana/varcall-dsl2"
-
-# Set your work directory (for temporary files and intermediate results)
-work_dir="/scratch/mamana"
-
-# Singularity cache directory
-singularity_cache="${work_dir}/singularity_cache"
-
-# Singularity temporary directory
-singularity_tempdir="${work_dir}/singularity_tmpdir"
-
-# Create necessary directories
-mkdir -p ${work_dir}/references
-mkdir -p ${work_dir}/results
-mkdir -p ${singularity_cache}
-mkdir -p ${singularity_tempdir}
-```
-
-> **💡 Why This Matters**: Proper directory configuration prevents data loss, improves performance, and makes troubleshooting easier. In bioinformatics, you'll often process hundreds of gigabytes of data—keeping it organized is essential!
-
-Let's understand each directory's purpose:
-
-**Project Directory (`project_dir`)**: Your command center containing:
-- Pipeline scripts and configuration files
-- Sample sheets defining your input data
-- Documentation and logs
-
-**Work Directory (`work_dir`)**: The pipeline's workshop where:
-- Intermediate files are created and processed
-- Temporary calculations take place
-- Nextflow manages task execution using symbolic links to track data flow
-
-**Reference Directory (`${work_dir}/references`)**: Your genomic library holding:
-- Reference genome sequences
-- Index files for faster searching
-- Known variant databases for calibration
-
-**Results Directory (`${work_dir}/results`)**: Your final destination for:
-- Quality control reports
-- Processed alignment files
-- Variant call results
-- Summary statistics
-
-**Singularity Directories**: Container management spaces for:
-- Storing downloaded container images (`singularity_cache`)
-- Handling temporary container operations (`singularity_tempdir`)
-
-> **⚠️ Common Pitfall**: Many pipeline failures occur due to insufficient storage space. Ensure your work directory has at least 100GB of free space per sample. For a typical whole-genome analysis with 30x coverage, allocate 200-300GB per sample.
-
-> **🔍 Pro Tip**: Place your work directory on a high-performance filesystem (like a parallel filesystem or SSD) for up to 10x faster execution. Avoid network filesystems for the work directory if possible, as the high I/O demands can cause bottlenecks.
-
-These environment variables will be used throughout the tutorial, so remember to adjust them to match your system before running any commands.
-
-### 1.2. Prerequisites
+### 1.1. Prerequisites
 
 Before you begin your variant calling journey, ensure you have these essential tools and resources available:
 
@@ -355,7 +296,7 @@ While this tutorial guides you through the technical steps, understanding these 
 
 Don't worry if you're not an expert in all these areas—we'll explain key concepts as we go along!
 
-### 1.3. Get the pipeline from GitHub:
+### 1.2. Get the pipeline from GitHub:
 
 ```bash
 git clone https://github.com/elwazi/varcall-dsl2-ngs-course-2025
@@ -365,28 +306,84 @@ cd varcall-dsl2-ngs-course-2025/
 **Test the installation**:
 
 ```bash
-./nextflow run main.nf --help
+nextflow run main.nf --help  
+```
+You should get the list of available workflows and an example use. You are good to go!
+
+Your project directory Structure should look like the following:
+
+```
+.
+└── varcall-dsl2-ngs-course-2025
+    ├── LICENSE
+    ├── README.md
+    ├── docs
+    │   └── tutorial-ngs-2025.md              # Step by step tutorial
+    ├── main.nf                               # Main pipeline
+    ├── modules                               # Pipeline modules
+    │   ├── modules-align.nf
+    │   ├── modules-combine-gvcfs.nf
+    │   ├── modules-download-gatk.nf
+    │   ├── modules-general.nf
+    │   ├── modules-generate-gvcf.nf
+    │   ├── modules-genome-calling.nf
+    │   ├── modules-genomics-db-import.nf
+    │   ├── modules-qc-fastqc.nf
+    │   ├── modules-qc-processes.nf
+    │   ├── modules-qc.nf
+    │   ├── modules-validate-gvcf.nf
+    │   └── modules-vcf.nf
+    ├── nextflow.config                       # Default configuration file
+    ├── templates                             # Template scripts used in the pipeline
+    │   ├── update_samplesheet.py
+    │   └── validation_report.py
+    └── user.config                           # User-specific configuration
 ```
 
-### 1.4. Directory Structure
+### 1.3. Directory Configuration
 
-Set up your project with the following recommended structure:
+Before continuing, you'll need to set up a proper directory structure. Think of this as building the foundation for your analysis - a well-organized workspace leads to a smoother workflow.
 
+> 🔍 Pro Tip: The $USER environment variable automatically contains your username on Unix-based systems (Linux, macOS). You can use it directly in commands or replace it with your actual username if needed. For Windows users in WSL or Git Bash, this variable is also available.
+
+```bash
+# Set your project directory
+project_dir="/users/$USER/varcall-dsl2-ngs-course-2025"
+
+# Set your work directory (for temporary files and intermediate results)
+work_dir="/scratch/$USER"
+
+# Singularity cache directory
+singularity_cache="${work_dir}/.singularity/cache"
+
+# Singularity temporary directory
+singularity_tempdir="${work_dir}/singularity_tmpdir"
+
+# Create necessary directories
+mkdir -p ${work_dir}/references
+mkdir -p ${work_dir}/results
+mkdir -p ${singularity_cache}
+mkdir -p ${singularity_tempdir}
 ```
-project_dir/                   # Main project directory
-├── main.nf                    # Main pipeline script
-├── nextflow.config            # Default configuration file
-├── user.config                # User-specific configuration
-├── sample_sheet_small.csv     # Sample information
-├── modules/                   # Pipeline modules
-│   ├── modules-align.nf       # Alignment modules
-│   ├── modules-qc.nf          # Quality control modules
-│   └── ...                    # Other module files
-├── results/                   # Output directory
-└── work/                      # Work directory (on high-performance storage)
-```
 
+> **💡 Why This Matters**: Proper directory configuration prevents data loss, improves performance, and makes troubleshooting easier. In bioinformatics, you'll often process hundreds of gigabytes of data—keeping it organized is essential!
 
+Let's understand each directory's purpose:
+
+**Project Directory (`project_dir`)**: Your command center containing: Pipeline scripts and configuration files, Sample sheets defining your input data, Documentation and logs
+**Work Directory (`work_dir`)**: The pipeline's workshop where: Intermediate files are created and processed, Temporary calculations take place, Nextflow manages task execution using symbolic links to track data flow
+**Reference Directory (`${work_dir}/references`)**: Your genomic library holding: Reference genome sequences, Index files for faster searching, Known variant databases for calibration
+**Results Directory (`${work_dir}/results`)**: Your final destination for: Quality control reports, Processed alignment files, Variant call results, Summary statistics
+
+**Singularity Directories**: Container management spaces for:
+- Storing downloaded container images (`singularity_cache`)
+- Handling temporary container operations (`singularity_tempdir`)
+
+> **⚠️ Common Pitfall**: Many pipeline failures occur due to insufficient storage space. Ensure your work directory has at least 100GB of free space per sample. For a typical whole-genome analysis with 30x coverage, allocate 200-300GB per sample.
+
+> **🔍 Pro Tip**: Place your work directory on a high-performance filesystem (like a parallel filesystem or SSD) for up to 10x faster execution. Avoid network filesystems for the work directory if possible, as the high I/O demands can cause bottlenecks.
+
+These environment variables will be used throughout the tutorial, so remember to adjust them to match your system before running any commands.
 
 ## 2. Pipeline Configuration
 
@@ -397,14 +394,14 @@ The pipeline uses two primary configuration files:
 1. **nextflow.config**: Default pipeline settings (comes with the pipeline)
 2. **user.config**: User-specific overrides (you create this file)
 
-Create a `user.config` file to customize the pipeline for your environment:
+Create a `user.config` file or copy the one from your cloned project directory  to customize the pipeline for your environment:
 
 ```groovy
 params {
     // Project parameters
-    project_dir = "/path/to/project"
-    outdir = "${project_dir}/results"
-    sample_sheet = "${project_dir}/sample_sheet.csv"
+    project_dir = "/users/$USER/varcall-dsl2-ngs-course-2025"
+    outdir = "/scratch/$USER/varcall-dsl2-ngs-course-2025/results"
+    sample_sheet = "${project_dir}/sample_sheet_small.csv"
     project_name = "my_project"  // Used in output file names
     
     // Reference genome build
@@ -428,9 +425,9 @@ params {
 singularity {
     enabled = true
     autoMounts = true
-    runOptions = '--bind /path/to/data'
-    cacheDir = "${HOME}/.singularity/cache"
-    tempDir = "${work_dir}/singularity_tmpdir"
+    runOptions = '--bind /scratch'
+    cacheDir = "/scratch/$USER/.singularity/cache"
+    tempDir = "/scratch/$USER/singularity_tmpdir"
 }
 
 // Resource checking
@@ -441,34 +438,18 @@ process {
     
     // Resource settings by process type
     withLabel: 'large_mem' {
-        cpus = 8
+        cpus = 3
         memory = 16.GB
     }
     
     withLabel: 'extra_large_mem' {
-        cpus = 16
+        cpus = 4
         memory = 32.GB
     }
 }
-
-// Reporting configuration
-report {
-    enabled = true
-    file = "${params.outdir}/execution_report.html"
-}
-
-timeline {
-    enabled = true
-    file = "${params.outdir}/execution_timeline.html"
-}
-
-trace {
-    enabled = true
-    file = "${params.outdir}/execution_trace.txt"
-}
 ```
 
-### 2.2. Sample Sheet Format
+### 2.2. Sample Sheet Format (**Tab-separated**)
 
 The sample sheet is the blueprint for your analysis, telling the pipeline what data to process and how to identify each sample. Think of it as a detailed inventory of your sequencing data.
 
@@ -604,7 +585,7 @@ The pipeline includes several execution profiles that can be combined to match y
             docker.enabled = false
             singularity.autoMounts = true
             singularity.pullTimeout = '60m'
-            singularity.cacheDir = "$HOME/.singularity/cache"
+            singularity.cacheDir = "/scratch/$USER/.singularity/cache"
         }
     }
     ```
@@ -635,9 +616,9 @@ singularity {
     enabled = true
     autoMounts = true
     runOptions = '--bind /users,/scratch'
-    cacheDir = "${HOME}/.singularity/cache"
+    cacheDir = "/scratch/$USER/.singularity/cache"
     pullTimeout = '3h'         // Increase timeout for slow connections
-    tempDir = "${work_dir}/singularity_tmpdir"
+    tempDir = "/scratch/$USER/singularity_tmpdir"
 }
 ```
 
@@ -717,7 +698,7 @@ singularity exec --bind /path/to/references,/path/to/data bwa_0.7.17--h1990860_1
 4. Consider storage space requirements for container cache
 5. Verify that your Singularity installation allows network access to pull containers
 
-## 3. Reference Data Preparation
+## 3. Reference Data Preparation (Step 1)
 
 This section covers how to prepare the reference genome and associated resources needed for variant calling. Having properly prepared reference data is critical for accurate variant detection.
 
@@ -733,7 +714,7 @@ A complete reference setup enables:
 - Proper variant filtering using known sites
 - Consistent variant annotation across samples
 
-### 3.1. Download Reference Genome and Resources from Cloud Storage
+#### Download Reference Genome and Resources from Cloud Storage
 
 The reference genome and associated resource files are downloaded from cloud storage locations (e.g., Google Cloud Storage) defined in the main configuration file. The URLs for each resource are specified in the pipeline's configuration, allowing flexibility in choosing reference sources and easy updates when new versions become available.
 
@@ -742,11 +723,14 @@ The reference genome and associated resource files are downloaded from cloud sto
 nextflow run ${project_dir}/main.nf \
     --workflow download_gatk \
     --build b38 \
-    --ref_dir ${work_dir}/references/hg38 \
+    --ref_dir /scratch/module5/references/hg38 \
     -profile standard \
     -c ${project_dir}/user.config \
     -resume -w ${work_dir}/work
 ```
+
+> Reference files are large (several GB) and can take hours to download. Reference files already exist on your system, use `--ref_dir = /scratch/module5/references/hg38` to point the pipeline to these existing files instead of downloading them again.
+
 
 **Workflow Details:**
 - **Tools Used**: wget with retry logic, samtools, BWA, GATK, bgzip, tabix
@@ -771,7 +755,84 @@ nextflow run ${project_dir}/main.nf \
 - `--ref_dir`: Where to store reference files
 - `-resume`: Continue from last successful step if workflow was interrupted
 
-## 4. Input Data Processing
+Once downloaded, you need to confirm or set the correct paths to your reference files. This is done in your `user.config` file, in the `params` scope or section with the variable `reference_files`.
+
+```nextflow
+params {
+    reference_files {
+        ref = "/path/to/reference.fasta"              // Reference genome FASTA file
+        dbsnp = "/path/to/dbsnp.vcf.gz"              // dbSNP database in VCF format
+        known_indels_1 = "/path/to/known_indels.vcf.gz"  // Known indels (e.g., 1000G indels)
+        known_indels_2 = "/path/to/mills_indels.vcf.gz"  // Additional indels (e.g., Mills)
+        hapmap = "/path/to/hapmap.vcf.gz"            // HapMap variants for VQSR
+        omni = "/path/to/omni.vcf.gz"                // Omni array variants for VQSR
+        phase1_snps = "/path/to/phase1_snps.vcf.gz"  // 1000G high confidence SNPs for VQSR
+        golden_indels = "/path/to/golden_indels.vcf.gz"  // Gold standard indels for VQSR
+    }
+}
+```
+
+#### Reference File Descriptions
+
+- **ref**: The reference genome in FASTA format.
+  - *Required*: Yes, for all workflows
+  - *Format*: FASTA (.fasta/.fa) file with index files (.fai, .dict)
+
+- **dbsnp**: Database of known SNPs from dbSNP.
+  - *Required*: Yes, for variant calling workflows
+  - *Format*: VCF file (.vcf.gz) with index (.tbi)
+  - *Used for*: Annotating variants and BQSR
+
+- **known_indels_1/2**: Known insertions and deletions.
+  - *Required*: Yes, for variant calling workflows
+  - *Format*: VCF file (.vcf.gz) with index (.tbi)
+  - *Used for*: Base Quality Score Recalibration (BQSR)
+
+- **hapmap/omni/phase1_snps/golden_indels**: Reference sets for VQSR.
+  - *Required*: Yes, for VQSR in joint genotyping
+  - *Format*: VCF files (.vcf.gz) with indexes (.tbi)
+  - *Used for*: Variant Quality Score Recalibration
+
+```bash
+mamana@cbio-01:~/varcall-dsl2-ngs-course-2025$ nextflow run ${project_dir}/main.nf \
+    --workflow download_gatk \
+    --build b38 \
+    --ref_dir /scratch/module5/references/hg38 \
+    -profile standard \
+    -c ${project_dir}/user.config \
+    -resume -w ${work_dir}/work
+Picked up _JAVA_OPTIONS: -Xmx16g
+
+ N E X T F L O W   ~  version 24.10.5
+
+Launching `/users/mamana/varcall-dsl2-ngs-course-2025/main.nf` [furious_pare] DSL2 - revision: c86a05270e
+
+
+    ===============================================================================================
+    🧬 Reference Data Download Workflow 🧬
+    ===============================================================================================
+    This workflow downloads and prepares reference data:
+    • Retrieving reference genome and index files
+    • Downloading variant databases for GATK
+    • Processing chromosome-specific reference files
+    • Validating downloaded files for integrity
+    • Specifying chromosomes: chr20
+    • Work directory: /scratch/mamana/work
+    • Saving reference data to: /scratch/module5/references/hg38
+    ===============================================================================================
+    
+[skipped  ] process > DOWNLOAD_GATK:download_and_index_reference_workflow:download_reference (dDL_full) [100%] 1 of 1, stored: 1 ✔
+[skipped  ] process > DOWNLOAD_GATK:download_and_index_reference_workflow:samtools_index (dIDX_full)    [100%] 1 of 1, stored: 1 ✔
+[skipped  ] process > DOWNLOAD_GATK:download_and_index_reference_workflow:bwa_index (dBWA_full)         [100%] 1 of 1, stored: 1 ✔
+[skipped  ] process > DOWNLOAD_GATK:download_and_index_reference_workflow:samtools_dict (dSD_full)      [100%] 1 of 1, stored: 1 ✔
+[skipped  ] process > DOWNLOAD_GATK:download_and_index_reference_workflow:gatk_dict (dSD_full)          [100%] 1 of 1, stored: 1 ✔
+[skipped  ] process > DOWNLOAD_GATK:download_and_index_vcfs:download_full_vcf (dl_vcf)                  [100%] 7 of 7, stored: 7 ✔
+[skipped  ] process > DOWNLOAD_GATK:download_and_index_vcfs:index_vcf (idx_vcf)                         [100%] 7 of 7, stored: 7 ✔
+Downloading VCF resources: dbsnp, hapmap, omni, phase1_snps, golden_indels, known_indels, mills
+```
+
+
+## 4. Input Data Processing (Step 2)
 
 ### 4.1. Validate FASTQ Files: Ensuring Data Quality and Integrity
 
@@ -789,6 +850,7 @@ This validation provides confidence in your input data quality before investing 
 ```bash
 # Validate FASTQ files to check format and integrity
 nextflow run ${project_dir}/main.nf \
+    -c ${project_dir}/user.config \
     -profile standard \
     --sample_sheet ${project_dir}/sample_sheet_small.csv \
     --workflow validate_fastq \
@@ -811,6 +873,56 @@ nextflow run ${project_dir}/main.nf \
   - Warns about potential issues with read names or paired files
   - Essential step before investing computing resources in analysis
 
+```bash
+mamana@cbio-01:~/varcall-dsl2-ngs-course-2025$ nextflow run ${project_dir}/main.nf  -c ${project_dir}/user.config -profile standard --sample_sheet ${project_dir}/sample_sheet_small.csv  --workflow validate_fastq -resume -w ${work_dir}
+Picked up _JAVA_OPTIONS: -Xmx16g
+
+ N E X T F L O W   ~  version 24.10.5
+
+Launching `/users/mamana/varcall-dsl2-ngs-course-2025/main.nf` [fervent_shannon] DSL2 - revision: c86a05270e
+
+
+    ===============================================================================================
+    🧬 FASTQ Validation Workflow 🧬
+    ===============================================================================================
+    This workflow performs comprehensive validation on FASTQ files:
+    • Checking FASTQ file format and compression
+    • Validating read pairs and read counts
+    • Verifying sequence quality encoding
+    • Creating a combined validation summary report
+    ===============================================================================================
+    
+Force validation pass setting: false
+executor >  local (4)
+[37/209443] VALIDATE_FASTQ:validate_fastq (validating NA12873_1) [100%] 3 of 3 ✔
+[54/8bca37] VALIDATE_FASTQ:combine_validation_reports            [100%] 1 of 1 ✔
+
+===============================================================================================
+🧬 FASTQ Validation Workflow Completed 🧬
+===============================================================================================
+• 3 files validated with NO issues ✅
+• 0 files validated with issues 
+• Validation reports are available in: /scratch/mamana/varcall-dsl2/results/test/validate_fastq/validation/
+• Combined validation report: /scratch/mamana/varcall-dsl2/results/test/validate_fastq/validation/combined_validation_report.txt
+===============================================================================================
+```
+
+We can look at the content of `/scratch/mamana/varcall-dsl2/results/test/validate_fastq/validation/combined_validation_report.txt`
+
+```bash
+mamana@cbio-01:~/varcall-dsl2-ngs-course-2025$ tail /scratch/mamana/varcall-dsl2/results/test/validate_fastq/validation/combined_validation_report.txt
+================================================
+                   SUMMARY                      
+================================================
+Total files validated: 3
+Files with no issues: 3
+Files with issues: 0
+
+✅ All FASTQ files passed validation
+
+================================================
+```
+
 ### 4.2. Run FASTQ Quality Control
 
 Quality control is a critical first step in any sequencing analysis. Just as you'd inspect ingredients before cooking, you need to check your sequencing data quality before analysis.
@@ -818,6 +930,7 @@ Quality control is a critical first step in any sequencing analysis. Just as you
 ```bash
 # Run FASTQ QC with adapter trimming
 nextflow run ${project_dir}/main.nf \
+    -c ${project_dir}/user.config \
     -profile standard \
     --sample_sheet ${project_dir}/sample_sheet_small.csv \
     --workflow fastq_qc \
@@ -859,13 +972,17 @@ This workflow performs several essential quality checks and improvements on your
 After running the workflow, review these key metrics in the MultiQC report (`${outdir}/${project_name}/fastq_qc/multiqc/multiqc_report.html`):
 
 **Per-Base Sequence Quality (look for Phred scores >30)**
-![Per-Base Quality Example](https://www.researchgate.net/profile/Ronika-Jain-2/publication/342420082/figure/fig4/AS:908189595725825@1593431384199/FastQC-analysis-on-raw-reads-Per-base-sequence-quality-report-The-central-red-line-shows.png)
+<img src="images/fasqc_1.png" alt="Per-Base Sequence Quality Example" width="1000" />
+
 
 **Sequence Length Distribution (should be consistent)**
-![Sequence Length Example](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/fastqc_figure_3.png)
+<img src="images/fastqc_2.png" alt="Sequence Length Distribution" width="1000" />
 
 **Adapter Content (should be minimal after trimming)**
-![Adapter Content Example](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/fastqc_figure_10.png)
+<img src="images/fastqc_3.png" alt="Adapter Content" width="1000" />
+
+**MultiQC report example**
+<img src="images/multiqc_1.png" alt="MultiQC report example" width="1000" />
 
 > **🔍 Pro Tip**: For whole-genome sequencing, a median quality score (Q-score) above 30 is ideal, corresponding to 99.9% base call accuracy. However, even slightly lower quality (Q>20) is often acceptable for variant calling, especially with sufficient coverage depth (>20x).
 
@@ -891,7 +1008,63 @@ The workflow produces several output directories:
 
 Additionally, the workflow creates an updated sample sheet with paths to the trimmed files, which you'll use in the next alignment step.
 
+```bash
+mamana@cbio-01:~/varcall-dsl2-ngs-course-2025$ cat /users/mamana/varcall-dsl2-ngs-course-2025/sample_sheet_small_trimmed.csv
+SampleID        Gender  FastqR1 FastqR2 Flowcell        Lane    BAM     gVCF    FastqTrimmedR1  FastqTrimmedR2
+NA12873_1       .       /scratch/module5/test_data/NA12873_1.fastq.gz   /scratch/module5/test_data/NA12873_2.fastq.gz   NA      NA      NA      NA      /scratch/mamana/varcall-dsl2/results/test/fastq_qc/trimmed/NA12873_1_R1_trimmed.fastq.gz  /scratch/mamana/varcall-dsl2/results/test/fastq_qc/trimmed/NA12873_1_R2_trimmed.fastq.gz
+NA12874_1       .       /scratch/module5/test_data/NA12874_1.fastq.gz   /scratch/module5/test_data/NA12874_2.fastq.gz   NA      NA      NA      NA      /scratch/mamana/varcall-dsl2/results/test/fastq_qc/trimmed/NA12874_1_R1_trimmed.fastq.gz  /scratch/mamana/varcall-dsl2/results/test/fastq_qc/trimmed/NA12874_1_R2_trimmed.fastq.gz
+NA12878_1       .       /scratch/module5/test_data/NA12878_1.fastq.gz   /scratch/module5/test_data/NA12878_2.fastq.gz   NA      NA      NA      NA      /scratch/mamana/varcall-dsl2/results/test/fastq_qc/trimmed/NA12878_1_R1_trimmed.fastq.gz  /scratch/mamana/varcall-dsl2/results/test/fastq_qc/trimmed/NA12878_1_R2_trimmed.fastq.gz
+```
+
 **Note**: If you run the workflow without `--trim_reads`, it will only analyze the original files without modifying them—useful for initial assessment.
+
+```bash
+nextflow run ${project_dir}/main.nf \ 
+    -c ${project_dir}/user.config \ 
+    -profile standard \ 
+    --sample_sheet ${project_dir}/sample_sheet_small.csv \ 
+    --workflow fastq_qc \
+    --trim_reads -resume \
+    -w ${work_dir} \
+    -c fix.config
+
+Picked up _JAVA_OPTIONS: -Xmx16g
+
+ N E X T F L O W   ~  version 24.10.5
+
+Launching `/users/mamana/varcall-dsl2-ngs-course-2025/main.nf` [adoring_curran] DSL2 - revision: c86a05270e
+
+
+    ===============================================================================================
+    🧬 FASTQ Quality Control Workflow 🧬
+    ===============================================================================================
+    This workflow performs comprehensive quality control on FASTQ files:
+    • Running FastQC to assess read quality metrics
+    • Generating quality reports for each sample
+    • Trimming low-quality bases and adapter sequences with Trimmomatic
+    • Creating MultiQC report to summarize all QC metrics
+    • Inputs:
+        • Sample Sheet: /users/mamana/varcall-dsl2-ngs-course-2025/sample_sheet_small.csv
+        • Output Directory: /scratch/mamana/varcall-dsl2/results
+        • Trim Reads: true
+        • Adapter File: /users/mamana/varcall-dsl2-ngs-course-2025/assets/adapters/TruSeq3-PE.fa
+    ===============================================================================================
+    
+[b7/39dd48] process > FASTQ_QC:fastq_qc_workflow:validate_fastq (validating NA12874_1) [100%] 3 of 3, cached: 3 ✔
+[64/e063d9] process > FASTQ_QC:fastq_qc_workflow:fastq_trim (fTrim_NA12873_1)          [100%] 3 of 3, cached: 3 ✔
+[d2/519bf0] process > FASTQ_QC:fastq_qc_workflow:trimmed_fastqc (fQCtrim_NA12878_1)    [100%] 3 of 3, cached: 3 ✔
+Trimming is enabled. Running Trimmomatic...
+
+    ===============================================================================================
+    🧬 FASTQ Quality Control Workflow Completed 🧬
+    ===============================================================================================
+    • Outputs:
+        • FASTQ QC reports: /scratch/mamana/varcall-dsl2/results/test/fastq_qc/fastqc/
+        • MultiQC reports: /scratch/mamana/varcall-dsl2/results/test/fastq_qc/multiqc/multiqc_report.html
+        • Trimmed reads available in: /scratch/mamana/varcall-dsl2/results/test/fastq_qc/trimmed/
+        • Updated samplesheet: /users/mamana/varcall-dsl2-ngs-course-2025/sample_sheet_small_trimmed.csv
+    ===============================================================================================
+```
 
 ## 5. Sequence Alignment
 
@@ -957,6 +1130,65 @@ nextflow run ${project_dir}/main.nf \
   - Memory and CPU usage can be adjusted for each process
   - Reference files specified in the configuration
 
+```bash
+mamana@cbio-01:~/varcall-dsl2-ngs-course-2025$ nextflow run ${project_dir}/main.nf \
+    -c ${project_dir}/user.config \
+    -profile standard \
+    --sample_sheet ${project_dir}/sample_sheet_small_trimmed.csv \
+    --workflow align \
+    -resume -w ${work_dir}
+Picked up _JAVA_OPTIONS: -Xmx16g
+
+ N E X T F L O W   ~  version 24.10.5
+
+Launching `/users/mamana/varcall-dsl2-ngs-course-2025/main.nf` [maniac_raman] DSL2 - revision: c86a05270e
+
+Checking reference files for: /scratch/module5/references/hg38/Homo_sapiens_assembly38.fasta
+All required reference files exist and are properly indexed.
+
+    ===============================================================================================
+    🧬 Sequence Alignment Workflow 🧬
+    ===============================================================================================
+    This workflow aligns FASTQ reads to the reference genome:
+    • Aligning reads using BWA-MEM algorithm
+    • Sorting and marking duplicates in BAM files
+    • Adding read groups and other metadata
+    • Generating alignment statistics and quality metrics
+    • Inputs:
+        • Sample Sheet: /users/mamana/varcall-dsl2-ngs-course-2025/sample_sheet_small_trimmed.csv
+        • Trim Reads: 
+        • Input type: FastqR1/R2
+        • Output Directory: /scratch/mamana/varcall-dsl2/results
+    ===============================================================================================
+    
+executor >  local (28)
+[53/c08bfd] ALIGN:log_tool_version_samtools (tool_ver)          [100%] 1 of 1 ✔
+[e4/1b857f] ALIGN:log_tool_version_bwa (tool_ver)               [100%] 1 of 1 ✔
+[bc/f5004a] ALIGN:log_tool_version_gatk (tool_ver)              [100%] 1 of 1 ✔
+[02/a4be43] ALIGN:run_bwa (NA12878_1)                           [100%] 3 of 3 ✔
+[ac/4da828] ALIGN:run_bam_sort (NA12873_1)                      [100%] 3 of 3 ✔
+[94/4a054c] ALIGN:run_mark_duplicates (NA12873_1)               [100%] 3 of 3 ✔
+[1a/e8a243] ALIGN:run_create_recalibration_table (NA12873_1)    [100%] 3 of 3 ✔
+[d7/b5cc68] ALIGN:run_recalibrate_bam (NA12873_1)               [100%] 3 of 3 ✔
+[f6/d9ef27] ALIGN:bam_to_cram (NA12873_1)                       [100%] 3 of 3 ✔
+[2f/b94b4b] ALIGN:run_cram_flagstat (NA12873_1)                 [100%] 3 of 3 ✔
+[95/b787c1] ALIGN:create_cram_md5sum (NA12873_1)                [100%] 3 of 3 ✔
+[4c/c8b8e4] ALIGN:update_samplesheet (update_samplesheet_align) [100%] 1 of 1 ✔
+
+    ===============================================================================================
+    🧬 Sequence Alignment Workflow Completed 🧬
+    ===============================================================================================
+    • Outputs:
+        • CRAM files are available in: /scratch/mamana/varcall-dsl2/results/test/align/crams/
+        • MultiQC report: /scratch/mamana/varcall-dsl2/results/test/align/multiqc/multiqc_report.html
+        • Updated samplesheet: /users/mamana/varcall-dsl2-ngs-course-2025/sample_sheet_small_trimmed_crams.csv
+    ===============================================================================================
+    
+Completed at: 27-Mar-2025 06:12:09
+Duration    : 4m 14s
+CPU hours   : 0.1
+Succeeded   : 28
+```
 ### 5.2. Run BAM Quality Control (QC)
 
 After aligning reads to the reference genome, it's critical to assess the quality of the alignments. This step helps identify potential issues with:
@@ -972,6 +1204,7 @@ The BAM QC workflow runs a comprehensive suite of quality control tools and aggr
 ```bash
 # Perform QC on aligned BAM files
 nextflow run ${project_dir}/main.nf \
+    -c ${project_dir}/user.config \
     -profile standard \
     --sample_sheet ${project_dir}/sample_sheet_small_trimmed_crams.csv \
     --workflow bam_qc \
@@ -1007,6 +1240,9 @@ nextflow run ${project_dir}/main.nf \
    - Coverage distribution across genome
    - Percentage of bases covered at different thresholds
 3. Insert size distribution and duplicate metrics
+
+**MultiQC report example**
+<img src="images/multiqc_1.png" alt="MultiQC report example" width="1000" />
 
 ## 6. Variant Calling
 
@@ -1083,6 +1319,69 @@ nextflow run ${project_dir}/main.nf \
 **Why gVCF format:**
 gVCF (Genomic VCF) contains information about both variant and non-variant positions, enabling joint genotyping across multiple samples, even at positions where some samples don't have variants. This improves variant calling accuracy and scalability.
 
+```bash
+mamana@cbio-01:~/varcall-dsl2-ngs-course-2025$ nextflow run ${project_dir}/main.nf \
+    -c ${project_dir}/user.config \
+    -profile standard \
+    --sample_sheet ${project_dir}/sample_sheet_small_trimmed_crams.csv \
+    --workflow generate-gvcfs \
+    -resume -w ${work_dir}
+Picked up _JAVA_OPTIONS: -Xmx16g
+
+ N E X T F L O W   ~  version 24.10.5
+
+Launching `/users/mamana/varcall-dsl2-ngs-course-2025/main.nf` [goofy_shockley] DSL2 - revision: c86a05270e
+
+Checking reference files for: /scratch/module5/references/hg38/Homo_sapiens_assembly38.fasta
+All required reference files exist and are properly indexed.
+
+    ===============================================================================================
+    🧬 GVCF Generation Workflow 🧬
+    ===============================================================================================
+    This workflow generates Genomic VCF files from aligned reads:
+    • Performing per-sample variant calling with GATK HaplotypeCaller
+    • Processing 1 autosomal chromosomes and 0 PAR regions
+    • Creating GVCF files for downstream joint genotyping
+    • Validating output files for data integrity
+    • Inputs:
+        • Sample Sheet: /users/mamana/varcall-dsl2-ngs-course-2025/sample_sheet_small_trimmed_crams.csv
+        • Chromosomes: [chr20]
+        • PAR Chromosomes: []
+        • All Chromosomes: [chr20]
+        • MT Chromosome: 
+        • Output Directory: /scratch/mamana/varcall-dsl2/results
+    ===============================================================================================
+    
+executor >  local (14)
+[c5/e167fd] GENERATE_GVCFS:log_tool_version_gatk (tool_ver)                        [100%] 1 of 1 ✔
+[-        ] GENERATE_GVCFS:run_haplotype_caller_auto_males                         -
+[-        ] GENERATE_GVCFS:run_combine_sample_gvcfs_males                          -
+[-        ] GENERATE_GVCFS:run_index_gvcf_males                                    -
+[-        ] GENERATE_GVCFS:run_create_gvcf_md5sum_males                            -
+[-        ] GENERATE_GVCFS:run_haplotype_caller_auto_females                       -
+[-        ] GENERATE_GVCFS:run_combine_sample_gvcfs_females                        -
+[-        ] GENERATE_GVCFS:run_index_gvcf_females                                  -
+[-        ] GENERATE_GVCFS:run_create_gvcf_md5sum_females                          -
+[07/802e2b] GENERATE_GVCFS:run_haplotype_caller_auto_nosex (NA12878_1.chr20.rHCoA) [100%] 3 of 3 ✔
+[0f/bc02a9] GENERATE_GVCFS:run_combine_sample_gvcfs_nosex (NA12878_1.cCgVCF)       [100%] 3 of 3 ✔
+[ce/d10da4] GENERATE_GVCFS:run_index_gvcf_nosex (NA12878_1.index)                  [100%] 3 of 3 ✔
+[ea/7f6f65] GENERATE_GVCFS:run_create_gvcf_md5sum_nosex (NA12878_1.cGMD5)          [100%] 3 of 3 ✔
+[df/340b0a] GENERATE_GVCFS:update_samplesheet (update_samplesheet_generate-gvcfs)  [100%] 1 of 1 ✔
+
+        ===============================================================================================
+        🧬 GVCF Generation Workflow Completed 🧬
+        ===============================================================================================
+        • GVCF files are available in: /scratch/mamana/varcall-dsl2/results/test/generate-gvcfs/gvcfs/
+        • MultiQC report: /scratch/mamana/varcall-dsl2/results/test/generate-gvcfs/multiqc/multiqc_report.html
+        • Updated samplesheet: /users/mamana/varcall-dsl2-ngs-course-2025/sample_sheet_small_trimmed_crams_gvcfs.csv
+        ===============================================================================================
+        
+Completed at: 27-Mar-2025 06:37:59
+Duration    : 3m 37s
+CPU hours   : 0.2
+Succeeded   : 14
+```
+
 ### 6.2. Import gVCFs into GenomicsDB
 
 After generating gVCF files for each sample, we need to consolidate them into a GenomicsDB database. This step is crucial for efficient joint genotyping of multiple samples. GenomicsDB is a specialized database system that:
@@ -1098,6 +1397,7 @@ The import process converts individual gVCF files into a columnar storage format
 ```bash
 # Import gVCFs into GenomicsDB
 nextflow run ${project_dir}/main.nf \
+    -c ${project_dir}/user.config \
     -profile standard \
     --sample_sheet ${project_dir}/sample_sheet_small_trimmed_crams_gvcfs.csv \
     --workflow genomics-db-import \
@@ -1128,11 +1428,52 @@ nextflow run ${project_dir}/main.nf \
 **Purpose of GenomicsDB:**
 GenomicsDB efficiently stores variant information for thousands of samples, providing rapid access to genomic regions across all samples while reducing memory requirements compared to loading all gVCFs simultaneously.
 
+```bash
+mamana@cbio-01:~/varcall-dsl2-ngs-course-2025$ nextflow run ${project_dir}/main.nf \
+    -c ${project_dir}/user.config \
+    -profile standard \
+    --sample_sheet ${project_dir}/sample_sheet_small_trimmed_crams_gvcfs.csv \
+    --workflow genomics-db-import \
+    --db_path ${work_dir}/results/genomicsdb \
+    --db_update no \
+    -resume -w ${work_dir}/work
+Picked up _JAVA_OPTIONS: -Xmx16g
+
+ N E X T F L O W   ~  version 24.10.5
+
+Launching `/users/mamana/varcall-dsl2-ngs-course-2025/main.nf` [insane_jepsen] DSL2 - revision: c86a05270e
+
+Checking reference files for: /scratch/module5/references/hg38/Homo_sapiens_assembly38.fasta
+All required reference files exist and are properly indexed.
+
+    ===============================================================================================
+    🧬 GenomicsDB Import Workflow 🧬
+    ===============================================================================================
+    This workflow consolidates sample gVCFs into a GenomicsDB:
+    • Sample Sheet: /users/mamana/varcall-dsl2-ngs-course-2025/sample_sheet_small_trimmed_crams_gvcfs.csv
+    • Chromosomes: 1 regions
+    • Database Path: /scratch/mamana/results/genomicsdb
+    • Database Update: Yes
+    • Output Directory: /scratch/mamana/varcall-dsl2/results
+    ===============================================================================================
+    
+executor >  local (2)
+[a8/a6443a] GENOMICS_DB_IMPORT:run_backup_genomic_db (rBGDB)               [100%] 1 of 1 ✔
+[ae/32de4f] GENOMICS_DB_IMPORT:run_genomics_db_import_update (chr20.rGDIU) [100%] 1 of 1 ✔
+
+    ===============================================================================================
+    🧬 GenomicsDB Import Workflow Completed 🧬
+    ===============================================================================================
+    • GenomicsDB is available in: /scratch/mamana/results/genomicsdb
+    ===============================================================================================
+```
+
 ### 6.3. Perform Joint Genotyping
 
 ```bash
 # Joint genotyping from GenomicsDB
 nextflow run ${project_dir}/main.nf \
+    -c ${project_dir}/user.config \
     -profile standard \
     --workflow genome-calling \
     --db_path ${work_dir}/results/genomicsdb \
@@ -1169,13 +1510,62 @@ nextflow run ${project_dir}/main.nf \
 1. For SNPs: Variant Quality Score Recalibration (VQSR) - machine learning approach
 2. For Indels: Hard Filtering - fixed thresholds for various annotations
 
+```bash
+mamana@cbio-01:~/varcall-dsl2-ngs-course-2025$ nextflow run ${project_dir}/main.nf \
+    -c ${project_dir}/user.config \
+    -profile standard \
+    --workflow genome-calling \
+    --db_path ${work_dir}/results/genomicsdb \
+    -resume -w ${work_dir}/work 
+Picked up _JAVA_OPTIONS: -Xmx16g
+
+ N E X T F L O W   ~  version 24.10.5
+
+Launching `/users/mamana/varcall-dsl2-ngs-course-2025/main.nf` [intergalactic_davinci] DSL2 - revision: c86a05270e
+
+Checking reference files for: /scratch/module5/references/hg38/Homo_sapiens_assembly38.fasta
+All required reference files exist and are properly indexed.
+
+    ===============================================================================================
+    🧬 Genome Calling Workflow 🧬
+    ===============================================================================================
+    This workflow performs joint genotyping across samples:
+    • Calling variants from the GenomicsDB database
+    • Processing 1 chromosomal regions
+    • Applying VQSR for SNPs and hard filtering for INDELs
+    • Generating population-level VCF files
+    • Inputs:
+        • Database Path: /scratch/mamana/results/genomicsdb
+        • Chromosomes: [chr20]
+        • Output Directory: /scratch/mamana/varcall-dsl2/results
+    ===============================================================================================
+    
+executor >  local (6)
+[47/ffb065] GENOME_CALLING:log_tool_version_gatk (tool_ver)                  [100%] 1 of 1 ✔
+[30/0ab38a] GENOME_CALLING:run_genotype_gvcf_on_genome_db (test.chr20.rGGoG) [100%] 1 of 1 ✔
+[2e/22a6f8] GENOME_CALLING:run_concat_vcf (test.rGCC)                        [100%] 1 of 1 ✔
+[ef/5c1f9a] GENOME_CALLING:run_vqsr_on_snps (test.test.rVoS)                 [100%] 1 of 1 ✔
+[e9/451d32] GENOME_CALLING:apply_vqsr_on_snps (test.test.aVoS)               [100%] 1 of 1 ✔
+[b3/e6ee2a] GENOME_CALLING:hard_filter_indels (test.test.hFI)                [100%] 1 of 1 ✔
+
+    ===============================================================================================
+    🧬 Genome Calling Workflow Completed 🧬
+    ===============================================================================================
+    • Final VCF is available in: /scratch/mamana/varcall-dsl2/results/test/genome-calling/vcf/hard_filter/
+    - Combined before VQSR and Hard filtering: /scratch/mamana/varcall-dsl2/results/test/genome-calling/vcfs/test.vcf.gz
+    • Final VCF SNPs: /scratch/mamana/varcall-dsl2/results/test/genome-calling/vcfs/test.recal-SNP.vcf.gz
+    • Final VCF INDELs: /scratch/mamana/varcall-dsl2/results/test/genome-calling/vcfs/test.recal-INDEL.vcf.gz
+    ===============================================================================================
+```
+
 ### 6.4. Run VCF Quality Control
 
 ```bash
 # Validate VCF files and produce quality metrics
 nextflow run ${project_dir}/main.nf \
+    -c ${project_dir}/user.config \
     -profile standard \
-    --sample_sheet ${project_dir}/vcf_samples.csv \
+    --vcf_input ${work_dir}/results/${project_name}/genome-calling/vcfs/${project_name}.vcf.gz \
     --workflow vcf_qc \
     -resume -w ${work_dir}/work
 ```
@@ -1207,6 +1597,57 @@ nextflow run ${project_dir}/main.nf \
 - Filter effectiveness (proportion of variants failing filters)
 - Quality distributions and missing genotype rates
 
+**Multiqc report example**
+<img src="images/multiqc_vcf.png" alt="MultiQC report example" width="1000" />
+
+```bash
+mamana@cbio-01:~/varcall-dsl2-ngs-course-2025$ nextflow run ${project_dir}/main.nf \
+    -c ${project_dir}/user.config \
+    -profile standard \
+    --workflow genome-calling \
+    --db_path ${work_dir}/results/genomicsdb \
+    -resume -w ${work_dir}/work -c ${project_dir}/fix.config
+Picked up _JAVA_OPTIONS: -Xmx16g
+
+ N E X T F L O W   ~  version 24.10.5
+
+Launching `/users/mamana/varcall-dsl2-ngs-course-2025/main.nf` [festering_golick] DSL2 - revision: c86a05270e
+
+Checking reference files for: /scratch/module5/references/hg38/Homo_sapiens_assembly38.fasta
+All required reference files exist and are properly indexed.
+
+    ===============================================================================================
+    🧬 Genome Calling Workflow 🧬
+    ===============================================================================================
+    This workflow performs joint genotyping across samples:
+    • Calling variants from the GenomicsDB database
+    • Processing 1 chromosomal regions
+    • Applying VQSR for SNPs and hard filtering for INDELs
+    • Generating population-level VCF files
+    • Inputs:
+        • Database Path: /scratch/mamana/results/genomicsdb
+        • Chromosomes: [chr20]
+        • Output Directory: /scratch/mamana/varcall-dsl2/results
+    ===============================================================================================
+    
+executor >  local (6)
+[1d/ae009b] GENOME_CALLING:log_tool_version_gatk (tool_ver)                  [100%] 1 of 1 ✔
+[03/58b912] GENOME_CALLING:run_genotype_gvcf_on_genome_db (test.chr20.rGGoG) [100%] 1 of 1 ✔
+[de/8712c0] GENOME_CALLING:run_concat_vcf (test.rGCC)                        [100%] 1 of 1 ✔
+[96/2b80d1] GENOME_CALLING:run_vqsr_on_snps (test.test.rVoS)                 [100%] 1 of 1 ✔
+[d1/073833] GENOME_CALLING:apply_vqsr_on_snps (test.test.aVoS)               [100%] 1 of 1 ✔
+[4f/714785] GENOME_CALLING:hard_filter_indels (test.test.hFI)                [100%] 1 of 1 ✔
+
+    ===============================================================================================
+    🧬 Genome Calling Workflow Completed 🧬
+    ===============================================================================================
+    • Final VCF is available in: /scratch/mamana/varcall-dsl2/results/test/genome-calling/vcf/hard_filter/
+    - Combined before VQSR and Hard filtering: /scratch/mamana/varcall-dsl2/results/test/genome-calling/vcfs/test.vcf.gz
+    • Final VCF SNPs: /scratch/mamana/varcall-dsl2/results/test/genome-calling/vcfs/test.recal-SNP.vcf.gz
+    • Final VCF INDELs: /scratch/mamana/varcall-dsl2/results/test/genome-calling/vcfs/test.recal-INDEL.vcf.gz
+    ===============================================================================================
+```
+
 ## 7. Variant Filtering and Annotation
 
 After generating raw variant calls, the next critical step is filtering and annotation. This process:
@@ -1220,6 +1661,7 @@ After generating raw variant calls, the next critical step is filtering and anno
 Variant filtering applies quality thresholds to remove low-quality or likely false positive variants. The pipeline uses GATK VariantFiltration to apply both hard filters and machine learning-based approaches.
 
 ```bash
+# ${project_name} same as in user.config or nextflow config
 # Run VCF filtering and annotation workflow
 nextflow run ${project_dir}/main.nf \
     -c ${project_dir}/user.config \
@@ -1227,6 +1669,50 @@ nextflow run ${project_dir}/main.nf \
     --workflow filter-vcf \
     --vcf_input ${work_dir}/results/${project_name}/genome-calling/vcfs/${project_name}.vcf.gz \
     -resume -w ${work_dir}/work
+```
+
+```bash
+mamana@cbio-01:~/varcall-dsl2-ngs-course-2025$ nextflow run ${project_dir}/main.nf     -c ${project_dir}/user.config     -profile standard     --workflow filter-vcf     --vcf_input /scratch/mamana/varcall-dsl2/results/test/genome-calling/vcfs/test.vcf.gz     -resume -w ${work_dir}/work  -c ${project_dir}/fix.config
+Picked up _JAVA_OPTIONS: -Xmx16g
+
+ N E X T F L O W   ~  version 24.10.5
+
+Launching `/users/mamana/varcall-dsl2-ngs-course-2025/main.nf` [stoic_brahmagupta] DSL2 - revision: 2854c6c49b
+
+WARN: Access to undefined parameter `genome_version` -- Initialise it to a default value eg. `params.genome_version = some_value`
+WARN: Access to undefined parameter `snpeff_data_dir` -- Initialise it to a default value eg. `params.snpeff_data_dir = some_value`
+
+    ===============================================================================================
+    🧬 VCF Filtering and Annotation Workflow 🧬
+    ===============================================================================================
+    This workflow filters and annotates VCF files:
+    • Applying quality filters using GATK VariantFiltration
+    • Annotating variants with Ensembl VEP (v113)
+    • Generating summary statistics and reports
+    • Optionally combining chromosome-split VCFs into a single file
+    • Inputs:
+        • VCF Input: /scratch/mamana/varcall-dsl2/results/test/genome-calling/vcfs/test.vcf.gz
+        • VCF Directory: Not provided
+        • Output Directory: /scratch/mamana/varcall-dsl2/results
+        • Genome Version: GRCh38.105
+        • SnpEff Data Dir: Auto-generated
+        • Combine VCFs: false
+    ===============================================================================================
+    
+Checking reference files for: /scratch/module5/references/hg38/Homo_sapiens_assembly38.fasta
+All required reference files exist and are properly indexed.
+executor >  local (3)
+[a1/a51821] FILTER_VCF:filter_annotate_vcf_workflow:filter_vcf (filter_test)             [100%] 1 of 1 ✔
+[3d/42c2f1] FILTER_VCF:filter_annotate_vcf_workflow:annotate_vcf_vep (vep_annotate_test) [100%] 1 of 1 ✔
+[c6/b2bf18] FILTER_VCF:filter_annotate_vcf_workflow:compress_index_vcf (compress_test)   [100%] 1 of 1 ✔
+
+    ===============================================================================================
+    🧬 VCF Filtering and Annotation Workflow Completed 🧬
+    ===============================================================================================
+    • Filtered VCFs are available in: /scratch/mamana/varcall-dsl2/results/test/filter-vcf/filtered/
+    • VEP Annotated VCFs are available in: /scratch/mamana/varcall-dsl2/results/test/filter-vcf/annotated/
+    
+    ===============================================================================================
 ```
 
 **Workflow Details:**
@@ -1242,6 +1728,32 @@ nextflow run ${project_dir}/main.nf \
   - Annotated VCFs: `${outdir}/${project_name}/filter-vcf/annotated/`
   - Index files (*.tbi) for all VCFs
   - Log files documenting the filtering criteria and process
+
+```bash
+#/scratch/mamana/varcall-dsl2/results/test/filter-vcf/filtered/test.filter_stats.txt
+Filtering statistics for test
+-----------------------------------------------
+Original variant count:
+41
+Filtered variant count:
+41
+Filtered out: 0 variants
+Percentage filtered: 0.00%
+
+Filter statistics by reason:
+Filter thresholds used:
+  QD < 2.0
+  FS > 60.0
+  MQ < 40.0
+  SOR > 3.0
+  ReadPosRankSum < -8.0
+
+QD < 2.0: 0
+FS > 60.0: 0
+MQ < 40.0: 0
+SOR > 3.0: 0
+ReadPosRankSum < -8.0: 0
+```
 
 ### 7.2. Annotate Variants with VEP
 
@@ -1260,10 +1772,35 @@ Variant annotation adds biological context to your variants, including gene name
   - Regulatory region impacts
   - Links to external databases
 
+- **Examples of annotations added**
+  ```bash
+  chr20   30318570        .       C       G       59.24   PASS    AC=2;AF=0.333;AN=6;DP=2;ExcessHet=0.0000;FS=0.000;MLEAC=2;MLEAF=0.333;MQ=50.99;QD=29.62;SOR=0.693;CSQ=
+  G|downstream_gene_variant|MODIFIER|FAM242A|ENSG00000231934|Transcript|ENST00000656990|lncRNA||||||||||rs2424831|4741|-1||HGNC|HGNC:51597|YES|||||||0.5294|0.8767|0.436
+  6|0.3175|0.501|0.3732|||||||||||0.8767|AFR|||||||||,G|downstream_gene_variant|MODIFIER|FAM242A|ENSG00000231934|Transcript|ENST00000662035|lncRNA||||||||||rs2424831|47
+  97|-1||HGNC|HGNC:51597||||||||0.5294|0.8767|0.4366|0.3175|0.501|0.3732|||||||||||0.8767|AFR|||||||||,G|downstream_gene_variant|MODIFIER|FAM242A|ENSG00000231934|Transc
+  ript|ENST00000670409|lncRNA||||||||||rs2424831|4799|-1||HGNC|HGNC:51597||||||||0.5294|0.8767|0.4366|0.3175|0.501|0.3732|||||||||||0.8767|AFR|||||||||,G|intron_variant
+  &non_coding_transcript_variant|MODIFIER|FRG1BP|ENSG00000287288|Transcript|ENST00000829738|lncRNA||1/6||||||||rs2424831||1||HGNC|HGNC:15792|YES|||||||0.5294|0.8767|0.4
+  366|0.3175|0.501|0.3732|||||||||||0.8767|AFR|||||||||,G|intron_variant&non_coding_transcript_variant|MODIFIER|FRG1BP|ENSG00000287288|Transcript|ENST00000829739|lncRNA
+  ||1/7||||||||rs2424831||1||HGNC|HGNC:15792||||||||0.5294|0.8767|0.4366|0.3175|0.501|0.3732|||||||||||0.8767|AFR|||||||||,G|intron_variant&non_coding_transcript_varian
+  t|MODIFIER|FRG1BP|ENSG00000287288|Transcript|ENST00000829740|lncRNA||1/1||||||||rs2424831||1||HGNC|HGNC:15792||||||||0.5294|0.8767|0.4366|0.3175|0.501|0.3732|||||||||
+  ||0.8767|AFR|||||||||,G|intron_variant&non_coding_transcript_variant|MODIFIER|FRG1BP|ENSG00000287288|Transcript|ENST00000829741|lncRNA||1/3||||||||rs2424831||1||HGNC|
+  HGNC:15792||||||||0.5294|0.8767|0.4366|0.3175|0.501|0.3732|||||||||||0.8767|AFR|||||||||,G|intron_variant&non_coding_transcript_variant|MODIFIER|FRG1BP|ENSG0000028728
+  8|Transcript|ENST00000829742|lncRNA||1/3||||||||rs2424831||1||HGNC|HGNC:15792||||||||0.5294|0.8767|0.4366|0.3175|0.501|0.3732|||||||||||0.8767|AFR|||||||||,G|intron_v
+  ariant&non_coding_transcript_variant|MODIFIER|FAM242A|ENSG00000231934|Transcript|ENST00000829942|lncRNA||1/1||||||||rs2424831||-1||HGNC|HGNC:51597||||||||0.5294|0.876
+  7|0.4366|0.3175|0.501|0.3732|||||||||||0.8767|AFR|||||||||,G|upstream_gene_variant|MODIFIER|FAM242A|ENSG00000231934|Transcript|ENST00000829944|lncRNA||||||||||rs24248
+  31|1609|-1||HGNC|HGNC:51597||||||||0.5294|0.8767|0.4366|0.3175|0.501|0.3732|||||||||||0.8767|AFR|||||||||,G|upstream_gene_variant|MODIFIER|FAM242A|ENSG00000231934|Tra
+  nscript|ENST00000829946|lncRNA||||||||||rs2424831|1802|-1||HGNC|HGNC:51597||||||||0.5294|0.8767|0.4366|0.3175|0.501|0.3732|||||||||||0.8767|AFR|||||||||,G|upstream_ge
+  ne_variant|MODIFIER|FAM242A|ENSG00000231934|Transcript|ENST00000829947|lncRNA||||||||||rs2424831|1832|-1||HGNC|HGNC:51597||||||||0.5294|0.8767|0.4366|0.3175|0.501|0.3
+  732|||||||||||0.8767|AFR|||||||||       GT:AD:DP:GQ:PL  0/0:0,0:0:0:0,0,0       1/1:0,2:2:6:69,6,0      0/0:0,0:0:0:0,0,0
+  ```
+
 **Customization Options:**
 - VEP annotation can be customized through the configuration
 - Additional annotation plugins can be enabled
 - Custom annotation databases can be specified
+
+**VEP report example**
+<img src="images/vep.png" alt="MultiQC report example" width="1000" />
 
 ### 7.3. Analyze Filtered and Annotated Variants
 
